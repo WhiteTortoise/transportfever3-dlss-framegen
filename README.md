@@ -2,6 +2,8 @@
 
 An unofficial mod that adds **NVIDIA DLSS Frame Generation** (with NVIDIA Reflex) to Transport Fever 3, which has no DLSS support of its own. After each frame the game renders, DLSS generates an extra frame. Movement looks smoother and the frame rate you see goes up.
 
+> **Made by AI:** this mod was written by **Claude** (Anthropic's AI, working in Claude Code): the reverse-engineering of the game's renderer, all of the code, the installer and these docs. **WhiteTortoise** asked for it, tested every version in game and published it.
+
 This is not a screen-capture tool like Lossless Scaling or Smooth Motion. The mod hooks into the game's renderer and gives DLSS the depth buffer, motion vectors and the 3D scene *before* the UI is drawn. Menus, the toolbar and in-world labels stay sharp and are not warped.
 
 **Example** (RTX 4050 Laptop GPU, 1080p, Very High): about 40 FPS without the mod, about 60 FPS with Frame Generation on.
@@ -131,4 +133,4 @@ The mod's source code is released under the [MIT License](LICENSE). NVIDIA Strea
 
 - Uses **NVIDIA DLSS Frame Generation** and **NVIDIA Reflex** through the NVIDIA Streamline SDK. NVIDIA, GeForce RTX, DLSS and Reflex are trademarks of NVIDIA Corporation. NVIDIA's runtime files are not included in this download; the installer gets them from NVIDIA's official Streamline release, and they are covered by NVIDIA's license.
 - Unofficial mod. Not affiliated with or endorsed by Urban Games, the game's publisher, or NVIDIA. Use at your own risk.
-- Built with Claude Code.
+- Written by Claude (Anthropic's AI) in Claude Code. Requested, tested and published by WhiteTortoise.
