@@ -2,7 +2,7 @@
 
 An unofficial mod that adds **NVIDIA DLSS Frame Generation** (with NVIDIA Reflex) to Transport Fever 3, which has no DLSS support of its own. After each frame the game renders, DLSS generates an extra frame. Movement looks smoother and the frame rate you see goes up.
 
-> **Made by AI:** this mod was written by **Claude** (Anthropic's AI, working in Claude Code): the reverse-engineering of the game's renderer, all of the code, the installer and these docs. **WhiteTortoise** asked for it, tested every version in game and published it.
+> **Made by AI:** this mod was written by **Claude** (Anthropic's AI, working in Claude Code): the reverse-engineering of the game's renderer, all of the code, the installer and these docs. 
 
 This is not a screen-capture tool like Lossless Scaling or Smooth Motion. The mod hooks into the game's renderer and gives DLSS the depth buffer, motion vectors and the 3D scene *before* the UI is drawn. Menus and windows stay sharp and are not warped, and city names, station signs and vehicle icons move smoothly with the camera.
 
