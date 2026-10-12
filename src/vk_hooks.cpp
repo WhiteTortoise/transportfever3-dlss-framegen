@@ -505,9 +505,17 @@ struct Event {
 struct CmdLog {
     std::vector<Event> events;
     std::vector<uint64_t> extra;
+    // World icons capture: the first render pass onto the screen after the
+    // scene resolve draws the scene plus the in-world labels and icons.
+    bool sawSceneResolve = false;
+    int iconsPass = 0;  // 0 not seen, 1 inside it, 2 done
+    VkImage iconsSwapImage = VK_NULL_HANDLE;
+    VkImageLayout iconsSwapLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     void Clear() {
         events.clear();
         extra.clear();
+        sawSceneResolve = false;
+        iconsPass = 0;
     }
     uint32_t PushExtra(const uint64_t* v, uint32_t n) {
         uint32_t at = static_cast<uint32_t>(extra.size());
@@ -1610,6 +1618,28 @@ VKAPI_ATTR VkResult VKAPI_CALL Hook_BeginCommandBuffer(VkCommandBuffer cb, const
     return real.BeginCommandBuffer(cb, bi);
 }
 
+// Marks `rp` as the world icons pass if it renders to a swapchain image.
+void NoteIconsPass(CmdLog* log, const VkRenderPassBeginInfo* rp, const VkRenderPassAttachmentBeginInfo* att) {
+    std::shared_lock lock(g_objMutex);
+    auto rpIt = g_renderPasses.find(rp->renderPass);
+    auto fbIt = g_framebuffers.find(rp->framebuffer);
+    uint32_t n = att && att->attachmentCount ? att->attachmentCount
+                                             : (fbIt != g_framebuffers.end() ? static_cast<uint32_t>(fbIt->second.views.size()) : 0);
+    for (uint32_t i = 0; i < n; ++i) {
+        VkImageView v = att && att->attachmentCount ? att->pAttachments[i] : fbIt->second.views[i];
+        auto vi = g_views.find(v);
+        if (vi == g_views.end()) continue;
+        const ImageInfo* ii = FindImage(vi->second.image);
+        if (!ii || !ii->swapchain) continue;
+        log->iconsPass = 1;
+        log->iconsSwapImage = vi->second.image;
+        log->iconsSwapLayout = rpIt != g_renderPasses.end() && i < rpIt->second.attachments.size()
+                                   ? rpIt->second.attachments[i].final
+                                   : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        return;
+    }
+}
+
 void RecordBeginRP(VkCommandBuffer cb, const VkRenderPassBeginInfo* rp) {
     CmdLog* log = GetLog(cb);
     Event e{Ev::BeginRP};
@@ -1626,6 +1656,7 @@ void RecordBeginRP(VkCommandBuffer cb, const VkRenderPassBeginInfo* rp) {
         e.extraCount = att->attachmentCount;
     }
     log->events.push_back(e);
+    if (log->sawSceneResolve && log->iconsPass == 0) NoteIconsPass(log, rp, att);
 }
 
 VKAPI_ATTR void VKAPI_CALL Hook_CmdBeginRenderPass(VkCommandBuffer cb, const VkRenderPassBeginInfo* rp,
@@ -1640,14 +1671,24 @@ VKAPI_ATTR void VKAPI_CALL Hook_CmdBeginRenderPass2(VkCommandBuffer cb, const Vk
     real.CmdBeginRenderPass2(cb, rp, sb);
 }
 
+void AfterEndRenderPass(VkCommandBuffer cb, CmdLog* log) {
+    if (log->iconsPass != 1) return;
+    log->iconsPass = 2;
+    FgRecordWorldIconsCopy(cb, log->iconsSwapImage, log->iconsSwapLayout, g_swapFormat, g_swapExtent);
+}
+
 VKAPI_ATTR void VKAPI_CALL Hook_CmdEndRenderPass(VkCommandBuffer cb) {
-    GetLog(cb)->events.push_back(Event{Ev::EndRP});
+    CmdLog* log = GetLog(cb);
+    log->events.push_back(Event{Ev::EndRP});
     real.CmdEndRenderPass(cb);
+    AfterEndRenderPass(cb, log);
 }
 
 VKAPI_ATTR void VKAPI_CALL Hook_CmdEndRenderPass2(VkCommandBuffer cb, const VkSubpassEndInfo* se) {
-    GetLog(cb)->events.push_back(Event{Ev::EndRP});
+    CmdLog* log = GetLog(cb);
+    log->events.push_back(Event{Ev::EndRP});
     real.CmdEndRenderPass2(cb, se);
+    AfterEndRenderPass(cb, log);
 }
 
 VKAPI_ATTR void VKAPI_CALL Hook_CmdNextSubpass(VkCommandBuffer cb, VkSubpassContents contents) {
@@ -1812,6 +1853,11 @@ VKAPI_ATTR void VKAPI_CALL Hook_CmdBlitImage2(VkCommandBuffer cb, const VkBlitIm
 VKAPI_ATTR void VKAPI_CALL Hook_CmdResolveImage(VkCommandBuffer cb, VkImage src, VkImageLayout sl, VkImage dst,
                                                 VkImageLayout dl, uint32_t n, const VkImageResolve* r) {
     AddImageOp(cb, Ev::ResolveImage, src, dst, sl, dl);
+    {
+        std::shared_lock lock(g_objMutex);
+        const ImageInfo* ii = FindImage(dst);
+        if (IsFullFrame(ii) && !IsDepthFormat(ii->format) && !ii->swapchain) GetLog(cb)->sawSceneResolve = true;
+    }
     real.CmdResolveImage(cb, src, sl, dst, dl, n, r);
 }
 

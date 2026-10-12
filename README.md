@@ -4,7 +4,7 @@ An unofficial mod that adds **NVIDIA DLSS Frame Generation** (with NVIDIA Reflex
 
 > **Made by AI:** this mod was written by **Claude** (Anthropic's AI, working in Claude Code): the reverse-engineering of the game's renderer, all of the code, the installer and these docs. **WhiteTortoise** asked for it, tested every version in game and published it.
 
-This is not a screen-capture tool like Lossless Scaling or Smooth Motion. The mod hooks into the game's renderer and gives DLSS the depth buffer, motion vectors and the 3D scene *before* the UI is drawn. Menus, the toolbar and in-world labels stay sharp and are not warped.
+This is not a screen-capture tool like Lossless Scaling or Smooth Motion. The mod hooks into the game's renderer and gives DLSS the depth buffer, motion vectors and the 3D scene *before* the UI is drawn. Menus and windows stay sharp and are not warped, and city names, station signs and vehicle icons move smoothly with the camera.
 
 **Example** (RTX 4050 Laptop GPU, 1080p, Very High): about 40 FPS without the mod, about 60 FPS with Frame Generation on.
 
@@ -44,7 +44,6 @@ The mod creates `tf3_framegen.ini` in the game folder the first time the game st
 ```ini
 start_enabled=on   ; on = Frame Generation starts on when a map loads, off = starts off
 hotkey=\           ; Ctrl+Alt+<key>: a letter, a digit, a symbol such as \, or F1-F12
-self_check=off     ; diagnostics only
 ```
 
 Hotkey changes take effect within a couple of seconds, even while the game is running.
@@ -58,6 +57,11 @@ Hotkey changes take effect within a couple of seconds, even while the game is ru
 - **Moving vehicles:** the mod's motion vectors only describe camera movement. DLSS's optical flow handles moving trains, and no smearing showed up in testing, but very fast objects could show minor artifacts.
 - **Station building and editing** are slowed down by the game's own CPU-heavy construction code. Frame Generation can't help there.
 - **Game updates** can change how the game renders and stop the mod working until it's updated. If that happens, uninstall it.
+
+## Changelog
+
+- **0.2.0:** City names, station signs and vehicle icons now move smoothly with the camera in generated frames instead of jittering while panning.
+- **0.1.0:** First release.
 
 ## Uninstall
 

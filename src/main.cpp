@@ -55,14 +55,12 @@ void LoadRealWinhttp() {
 }
 
 const wchar_t kDefaultIni[] =
-    L"; tf3_framegen settings. hotkey and self_check apply within 2 seconds, start_enabled at the next game start.\r\n"
+    L"; tf3_framegen settings\r\n"
     L"[framegen]\r\n"
-    L"; on = frame generation starts enabled when a map loads, off = starts disabled\r\n"
+    L"; on = frame generation starts enabled when a map loads, off = starts disabled (applies at the next game start)\r\n"
     L"start_enabled=on\r\n"
     L"; Ctrl+Alt+<key> toggles frame generation in game: a letter, a digit, a symbol key such as \\, or F1-F12\r\n"
-    L"hotkey=\\\r\n"
-    L"; on = log how accurate the motion vectors are (diagnostics, costs a little GPU time)\r\n"
-    L"self_check=off\r\n";
+    L"hotkey=\\\r\n";
 
 bool IniBool(const std::wstring& ini, const wchar_t* key, bool def) {
     wchar_t buf[16];

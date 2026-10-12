@@ -17,6 +17,7 @@ Result on an RTX 4050 Laptop GPU at 1080p Very High: about 40 FPS rendered witho
 - **Depth.** MSAA 2x scene (R11G11B10F colour, D24S8 depth). Depth is resolved to a single-sample full-frame D24S8 by a `vkCreateRenderPass2` pass with `VkSubpassDescriptionDepthStencilResolve`, ending in `SHADER_READ_ONLY_OPTIMAL`. Use that resolve attachment.
 - **UI-free (hudless) colour.** The last full-frame colour `vkCmdResolveImage` target (R11G11B10F, already tonemapped) before the first render pass that targets a swapchain image. The game copies it to the swapchain and then draws all UI, **including in-world labels**, on top.
 - **VSync.** FIFO, 2 swapchain images.
+- **In-world icons.** The first render pass onto the swapchain after that resolve draws the scene copy plus all in-world labels and icons (city names, station signs, vehicle icons). Windows and menus come in later passes (offscreen layer + composite). Copying the swapchain image at the end of that first pass and tagging the copy as hudless makes DLSS-G interpolate the icons with the scene, which removes icon jitter while panning (v0.2.0).
 
 ## Architecture
 1. **Proxy `winhttp.dll` in the game folder.** The exe imports WINHTTP; forward all of its exports to System32 with generated MASM jump stubs. Do **not** proxy `vulkan-1.dll`: Streamline's interposer calls `LoadLibraryA("vulkan-1.dll")` and would load the proxy.

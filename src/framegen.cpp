@@ -6,10 +6,12 @@
 //  - optional debug view (Ctrl+Alt+M) drawn into the top-right corner.
 #include "framegen.h"
 
+#include <atomic>
 #include <cmath>
 #include <cstring>
 #include <mutex>
 #include <unordered_map>
+#include <vector>
 
 #include "shaders/errstat.h"
 #include "shaders/mvgen.h"
@@ -98,6 +100,15 @@ std::unordered_map<VkImage, VkImageView> g_gameViews;
 // image: a semaphore used by a present may only be reused once that image
 // has been acquired again, which is guaranteed when it is presented again.
 std::unordered_map<VkImage, VkSemaphore> g_presentSemaphores;
+
+// Copy of the screen after the in-world labels/icons are drawn (before the
+// windows/menus). Used as DLSS's UI-free input when icons should move with
+// the camera in generated frames.
+OwnedImage g_iconsImage;
+VkFormat g_iconsFormat = VK_FORMAT_UNDEFINED;
+VkExtent2D g_iconsExtent{};
+std::vector<OwnedImage> g_retiredIconsImages;  // replaced while possibly in use; freed with the device
+bool g_iconsCaptured = false;                   // a copy was recorded since the last present
 
 // Camera of the previous frame.
 bool g_havePrevCamera = false;
@@ -429,6 +440,9 @@ void FgOnDeviceDestroyed() {
     }
     WaitAllSlots();
     DestroySized();
+    DestroyOwnedImage(g_iconsImage);
+    for (OwnedImage& img : g_retiredIconsImages) DestroyOwnedImage(img);
+    g_retiredIconsImages.clear();
     for (auto& [image, view] : g_gameViews) vk.DestroyImageView(g_device, view, nullptr);
     g_gameViews.clear();
     for (auto& [image, sem] : g_presentSemaphores) vk.DestroySemaphore(g_device, sem, nullptr);
@@ -461,6 +475,43 @@ void FgOnImageDestroyed(VkImage image) {
     g_gameViews.erase(it);
 }
 
+void FgRecordWorldIconsCopy(VkCommandBuffer cb, VkImage swapImage, VkImageLayout swapLayout, VkFormat format,
+                            VkExtent2D extent) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (g_failed || !g_device || !swapImage || !extent.width) return;
+    if (!g_iconsImage.image || g_iconsFormat != format || g_iconsExtent.width != extent.width ||
+        g_iconsExtent.height != extent.height) {
+        if (g_iconsImage.image) g_retiredIconsImages.push_back(g_iconsImage);
+        g_iconsImage = OwnedImage{};
+        if (!CreateOwnedImage(g_iconsImage, format, extent,
+                              VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)) {
+            return;
+        }
+        g_iconsFormat = format;
+        g_iconsExtent = extent;
+        FG_LOG("framegen: world icons capture image created (%ux%u)", extent.width, extent.height);
+    }
+    const VkPipelineStageFlags kAll = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+    const VkPipelineStageFlags kTransfer = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    VkImageLayout src = swapLayout == VK_IMAGE_LAYOUT_GENERAL ? VK_IMAGE_LAYOUT_GENERAL
+                                                              : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    Barrier(cb, swapImage, VK_IMAGE_ASPECT_COLOR_BIT, swapLayout, src, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+            VK_ACCESS_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, kTransfer);
+    Barrier(cb, g_iconsImage.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT, kAll, kTransfer);
+    VkImageCopy copy{};
+    copy.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    copy.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    copy.extent = {extent.width, extent.height, 1};
+    vk.CmdCopyImage(cb, swapImage, src, g_iconsImage.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+    Barrier(cb, g_iconsImage.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+            kTransfer, kAll);
+    Barrier(cb, swapImage, VK_IMAGE_ASPECT_COLOR_BIT, src, swapLayout, VK_ACCESS_TRANSFER_READ_BIT,
+            VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, kTransfer, kAll);
+    g_iconsCaptured = true;
+}
+
 void FgSetQueueFamily(VkQueue queue, uint32_t family) {
     std::lock_guard<std::mutex> lock(g_mutex);
     g_queueFamilies[queue] = family;
@@ -474,6 +525,9 @@ const VkPresentInfoKHR* FgOnPresent(VkQueue queue, const VkPresentInfoKHR* info,
     static bool comboWasDown = false;
     bool comboDown = (GetAsyncKeyState(VK_CONTROL) & 0x8000) && (GetAsyncKeyState(VK_MENU) & 0x8000) &&
                      (GetAsyncKeyState('M') & 0x8000);
+    bool iconsReady = g_iconsCaptured && g_iconsImage.image;
+    g_iconsCaptured = false;
+
     if (comboDown && !comboWasDown) {
         g_debugView = !g_debugView;
         FG_LOG("framegen: motion vector debug view %s", g_debugView ? "on" : "off");
@@ -674,6 +728,13 @@ const VkPresentInfoKHR* FgOnPresent(VkQueue queue, const VkPresentInfoKHR* info,
         fi.hudlessFormat = in->hudlessFormat;
         fi.hudlessLayout = in->hudlessLayout;
         fi.hudlessUsage = in->hudlessUsage;
+        if (iconsReady && g_iconsExtent.width == in->extent.width && g_iconsExtent.height == in->extent.height) {
+            fi.hudless = g_iconsImage.image;
+            fi.hudlessView = g_iconsImage.view;
+            fi.hudlessFormat = g_iconsFormat;
+            fi.hudlessLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            fi.hudlessUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        }
         fi.camera = in->camera;
         fi.prevCamera = g_havePrevCamera ? g_prevCamera : nullptr;
         SlProvideFrame(&fi);

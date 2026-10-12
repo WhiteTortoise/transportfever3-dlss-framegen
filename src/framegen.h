@@ -31,6 +31,11 @@ void FgOnDeviceCreated(VkDevice device, PFN_vkGetDeviceProcAddr gdpa, const VkPh
 void FgOnDeviceDestroyed();
 void FgOnImageDestroyed(VkImage image);
 void FgSetQueueFamily(VkQueue queue, uint32_t family);
+// Called while the game records its command buffer, right after the render
+// pass that draws the scene plus the in-world labels/icons onto the swapchain
+// image: copies that image so DLSS can treat the icons as part of the scene.
+void FgRecordWorldIconsCopy(VkCommandBuffer cb, VkImage swapImage, VkImageLayout swapLayout, VkFormat format,
+                            VkExtent2D extent);
 // Records and submits our per-frame GPU work and hands the frame to
 // Streamline (`*providedToSl` = true). Returns the present info to use
 // (`storage` when the wait semaphores had to be replaced, otherwise `info`).
