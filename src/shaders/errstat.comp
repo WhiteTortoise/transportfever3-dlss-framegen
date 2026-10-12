@@ -1,0 +1,42 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+// Self-check: how well does the previous frame, warped by the motion vectors,
+// match the current frame? Slot 0 = no warping, slots 1-4 = the four possible
+// screen/depth conventions (bit 0 = flipY, bit 1 = depthMode).
+#include "common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 0) uniform sampler2D depthTex;
+layout(set = 0, binding = 1) uniform sampler2D curTex;
+layout(set = 0, binding = 2) uniform sampler2D prevTex;
+layout(set = 0, binding = 4, std430) buffer Stats {
+    uint errorSum[5];
+    uint sampleCount[5];
+} stats;
+
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy) * pc.step;
+    if (p.x >= int(pc.size.x) || p.y >= int(pc.size.y)) {
+        return;
+    }
+    float d = texelFetch(depthTex, p, 0).r;
+    if (d >= 0.99999) {
+        return;  // sky
+    }
+    vec2 uv = (vec2(p) + 0.5) * pc.invSize;
+    float cur = Luma(texelFetch(curTex, p, 0).rgb);
+
+    float still = Luma(textureLod(prevTex, uv, 0.0).rgb);
+    atomicAdd(stats.errorSum[0], uint(min(abs(cur - still), 1.0) * 1000.0));
+    atomicAdd(stats.sampleCount[0], 1u);
+
+    for (int c = 0; c < 4; ++c) {
+        vec2 prevUv = Reproject(uv, d, c & 1, c >> 1);
+        if (any(lessThan(prevUv, vec2(0.0))) || any(greaterThan(prevUv, vec2(1.0)))) {
+            continue;
+        }
+        float warped = Luma(textureLod(prevTex, prevUv, 0.0).rgb);
+        atomicAdd(stats.errorSum[c + 1], uint(min(abs(cur - warped), 1.0) * 1000.0));
+        atomicAdd(stats.sampleCount[c + 1], 1u);
+    }
+}

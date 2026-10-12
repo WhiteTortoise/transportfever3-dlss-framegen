@@ -1,0 +1,20 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+// Camera motion vectors: offset (in UV units) from each pixel to where it was
+// in the previous frame, reconstructed from depth and the two camera matrices.
+#include "common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 0) uniform sampler2D depthTex;
+layout(set = 0, binding = 3, rgba16f) uniform writeonly image2D mvOut;
+
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (p.x >= int(pc.size.x) || p.y >= int(pc.size.y)) {
+        return;
+    }
+    vec2 uv = (vec2(p) + 0.5) * pc.invSize;
+    float d = texelFetch(depthTex, p, 0).r;
+    vec2 prevUv = Reproject(uv, d, pc.flipY, pc.depthMode);
+    imageStore(mvOut, p, vec4(prevUv - uv, 0.0, 0.0));
+}

@@ -1,0 +1,11 @@
+LIBRARY SDL2
+EXPORTS
+    SDL_Init
+    SDL_Quit
+    SDL_GetError
+    SDL_CreateWindow
+    SDL_DestroyWindow
+    SDL_PumpEvents
+    SDL_RaiseWindow
+    SDL_Vulkan_GetInstanceExtensions
+    SDL_Vulkan_CreateSurface
